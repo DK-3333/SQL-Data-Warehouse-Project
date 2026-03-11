@@ -1,6 +1,6 @@
 /*
 =======================================================================================
-dwh_bronze_data_quality_checks.sql (MySQL) - Data Warehousing Project
+dwh_silver_data_quality_checks.sql (MySQL) - Data Warehousing Project
 =======================================================================================
 
 Purpose:
