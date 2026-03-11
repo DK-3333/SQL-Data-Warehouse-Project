@@ -1,77 +1,40 @@
-/*
-===============================================================================
+/*===============================================================================
 dwh_load_gold.sql (MySQL) - Data Warehousing Project
 ===============================================================================
 
 Purpose:
-  Create the Gold layer business objects for analytics and reporting.
-  Gold layer exposes curated, analytics-ready objects (dimensions + facts)
-  based on Silver layer cleaned/standardized tables.
+  Build/refresh Gold layer analytics objects (dimensions + fact) as VIEWS
+  from the Silver layer.
 
-Objects created:
+Objects created/refreshed:
   - gold_dim_customers (VIEW)
   - gold_dim_products  (VIEW)
   - gold_fact_sales    (VIEW)
 
-Notes:
-  - Gold objects are implemented as VIEWS (lightweight semantic layer).
-  - Surrogate keys are generated using ROW_NUMBER() for dimensions.
-  - This script also includes validation queries for referential integrity.
+Monitoring:
+  - Tracks per-object build duration + total job duration.
 
-===============================================================================
-*/
+===============================================================================*/
 
 USE dwh;
 
+-- ============================================================
+-- ETL duration tracking (per-view + total)
+-- ============================================================
+DROP TEMPORARY TABLE IF EXISTS etl_load_metrics;
+CREATE TEMPORARY TABLE etl_load_metrics (
+  object_name   VARCHAR(150)  NOT NULL,
+  started_at    DATETIME(6)   NOT NULL,
+  ended_at      DATETIME(6)   NOT NULL,
+  duration_sec  DECIMAL(12,6) NOT NULL
+);
+
+SET @job_start := NOW(6);
+
 -- =============================================================================
--- BUSINESS OBJECT: CUSTOMER
+-- 1) Gold Dimension: Customers
 -- =============================================================================
-
--- Start with master table: silver_crm_cust_info + enrich with ERP customer + location
-SELECT
-  ci.cst_id,
-  ci.cst_key,
-  ci.cst_firstname,
-  ci.cst_lastname,
-  ci.cst_marital_status,
-  ci.cst_gndr,
-  ci.cst_create_date,
-  ca.bdate,
-  ca.gen,
-  la.cntry
-FROM silver_crm_cust_info AS ci
-LEFT JOIN silver_erp_cust_az12 AS ca -- Join the data with another table that is 'silver_erp_cust_az12'
-  ON ci.cst_key = ca.cid
-LEFT JOIN silver_erp_loc_a101 AS la -- Join the data with another table that is 'silver_erp_loc_a101'
-  ON ci.cst_key = la.cid;
-
--- Here there are two gender information one from CRM and another from ERP
-
--- Gender consistency check (CRM vs ERP)
-SELECT DISTINCT
-  ci.cst_gndr,
-  ca.gen
-FROM silver_crm_cust_info AS ci
-LEFT JOIN silver_erp_cust_az12 AS ca
-  ON ci.cst_key = ca.cid
-LEFT JOIN silver_erp_loc_a101 AS la
-  ON ci.cst_key = la.cid
-ORDER BY 1, 2;
-
--- CRM is master source for customer gender
-SELECT DISTINCT
-  ci.cst_gndr,
-  ca.gen,
-  CASE
-    WHEN cst_gndr != 'n/a' THEN cst_gndr
-    ELSE COALESCE(ca.gen, 'n/a')
-  END AS test
-FROM silver_crm_cust_info AS ci
-LEFT JOIN silver_erp_cust_az12 AS ca
-  ON ci.cst_key = ca.cid
-LEFT JOIN silver_erp_loc_a101 AS la
-  ON ci.cst_key = la.cid
-ORDER BY 1, 2;
+SET @t_start := NOW(6);
 
 -- Rename all columns to friendly names.
 -- Order all columns.
@@ -100,38 +63,16 @@ LEFT JOIN silver_erp_cust_az12 AS ca
 LEFT JOIN silver_erp_loc_a101 AS la
   ON ci.cst_key = la.cid;
 
--- Check view
-SELECT * FROM gold_dim_customers;
+SET @t_end := NOW(6);
+INSERT INTO etl_load_metrics(object_name, started_at, ended_at, duration_sec)
+VALUES ('gold_dim_customers (VIEW)', @t_start, @t_end,
+        TIMESTAMPDIFF(MICROSECOND, @t_start, @t_end) / 1000000);
+
 
 -- =============================================================================
--- BUSINESS OBJECT: PRODUCT
+-- 2) Gold Dimension: Products
 -- =============================================================================
-
--- Start with master table: silver_crm_prd_info + enrich with ERP product category
-SELECT
-  pi.prd_id,
-  pi.cat_id,
-  pi.prd_key,
-  pi.prd_nm,
-  pi.prd_cost,
-  pi.prd_line,
-  pi.prd_start_dt,
-  pi.prd_end_dt,
-  pa.cat,
-  pa.subcat,
-  pa.maintenance
-FROM silver_crm_prd_info AS pi
-LEFT JOIN silver_erp_px_cat_g1v2 AS pa -- Join the data with another table that is 'silver_erp_px_cat_g1v2'
-  ON pi.cat_id = pa.id;
-
--- Products with NULL end date represent current product records
-SELECT
-  pi.prd_id,
-  pi.prd_start_dt AS "current_date"
-FROM silver_crm_prd_info AS pi
-LEFT JOIN silver_erp_px_cat_g1v2 AS pa
-  ON pi.cat_id = pa.id
-WHERE pi.prd_end_dt IS NULL; -- filter out all historical data
+SET @t_start := NOW(6);
 
 -- Rename all columns to friendly names.
 -- Order all columns.
@@ -157,25 +98,16 @@ LEFT JOIN silver_erp_px_cat_g1v2 AS pa
   ON pi.cat_id = pa.id
 WHERE pi.prd_end_dt IS NULL;
 
--- Check view
-SELECT * FROM gold_dim_products;
+SET @t_end := NOW(6);
+INSERT INTO etl_load_metrics(object_name, started_at, ended_at, duration_sec)
+VALUES ('gold_dim_products (VIEW)', @t_start, @t_end,
+        TIMESTAMPDIFF(MICROSECOND, @t_start, @t_end) / 1000000);
+
 
 -- =============================================================================
--- BUSINESS OBJECT: SALES
+-- 3) Gold Fact: Sales
 -- =============================================================================
-
--- Start with master table: silver_crm_sales_details
-SELECT
-  sd.sls_ord_num,
-  sd.sls_prd_key,
-  sd.sls_cust_id,
-  sd.sls_order_dt,
-  sd.sls_ship_dt,
-  sd.sls_due_dt,
-  sd.sls_sales,
-  sd.sls_quantity,
-  sd.sls_price
-FROM silver_crm_sales_details AS sd;
+SET @t_start := NOW(6);
 
 -- As this is the fact table so over here we need to connect dimensions with this table.
 -- Here use the dimension's surrogate keys instead of IDs to easily connect facts with dimensions.
@@ -200,28 +132,27 @@ LEFT JOIN gold_dim_products AS pr
 LEFT JOIN gold_dim_customers AS cu
   ON sd.sls_cust_id = cu.customer_id;
 
--- Check view
-SELECT * FROM gold_fact_sales;
+SET @t_end := NOW(6);
+INSERT INTO etl_load_metrics(object_name, started_at, ended_at, duration_sec)
+VALUES ('gold_fact_sales (VIEW)', @t_start, @t_end,
+        TIMESTAMPDIFF(MICROSECOND, @t_start, @t_end) / 1000000);
+
 
 -- =============================================================================
--- VALIDATIONS: Foreign Key Integrity (Dimensions)
+-- Final reporting: per-object + total duration
 -- =============================================================================
+SET @job_end := NOW(6);
 
--- Facts with missing customer dimension match
-SELECT *
-FROM gold_fact_sales AS f
-LEFT JOIN gold_dim_customers AS c
-  ON c.customer_key = f.customer_key
-WHERE c.customer_key IS NULL;
+SELECT
+  object_name,
+  started_at,
+  ended_at,
+  ROUND(duration_sec, 3) AS duration_sec
+FROM etl_load_metrics
+ORDER BY started_at;
 
--- Facts with missing product dimension match
-SELECT *
-FROM gold_fact_sales AS f
-LEFT JOIN gold_dim_products AS p
-  ON p.product_key = f.product_key
-WHERE p.product_key IS NULL;
-
--- Final quick checks
-SELECT * FROM gold_dim_customers;
-SELECT * FROM gold_dim_products;
-SELECT * FROM gold_fact_sales;
+SELECT
+  'TOTAL' AS object_name,
+  @job_start AS started_at,
+  @job_end   AS ended_at,
+  ROUND(TIMESTAMPDIFF(MICROSECOND, @job_start, @job_end) / 1000000, 3) AS duration_sec;
