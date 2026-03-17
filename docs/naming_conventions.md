@@ -26,14 +26,14 @@ This document outlines the naming conventions used for schemas, tables, views, c
 - **`bronze`_`<sourcesystem>_<entity>`**  
   - `<sourcesystem>`: Name of the source system (e.g., `crm`, `erp`).  
   - `<entity>`: Exact table name from the source system.  
-  - Example: `bronze_crm_customer_info` → Customer information from the CRM system.
+  - Example: `bronze_crm_cust_info` → Customer information from the CRM system.
 
 ### **Silver Rules**
 - All names must start with the source system name, and table names must match their original names without renaming.
 - **`silver`_`<sourcesystem>_<entity>`**  
   - `<sourcesystem>`: Name of the source system (e.g., `crm`, `erp`).  
   - `<entity>`: Exact table name from the source system.  
-  - Example: `silver_crm_customer_info` → Customer information from the CRM system.
+  - Example: `silver_crm_cust_info` → Customer information from the CRM system.
 
 ### **Gold Rules**
 - All names must use meaningful, business-aligned names for tables, starting with the category prefix.
