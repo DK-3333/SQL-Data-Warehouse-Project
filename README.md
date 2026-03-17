@@ -62,7 +62,7 @@ data-warehouse-project/
 │   ├── data_catalog.md                 # Catalog of datasets, including field descriptions and metadata
 │   ├── data_flow_diagram.drawio        # Draw.io file for the data flow diagram
 |   ├── data_integration_model.drawio   # Draw.io file for data integration to specify data objects
-│   ├── data_model.drawio              # Draw.io file for data models (star schema)
+│   ├── data_model.drawio               # Draw.io file for data models (star schema)
 │   ├── naming_conventions.md           # Consistent naming guidelines for tables, columns, and files
 │
 ├── scripts/                            # SQL scripts for ETL and transformations
